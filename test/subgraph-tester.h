@@ -107,21 +107,25 @@ class SubgraphTester {
   inline SubgraphTester& AddStaticTensorF32(const std::vector<size_t>& dims,
                                             TensorType tensor_type,
                                             uint32_t external_id,
-                                            uint32_t flags = 0) {
-    const size_t num_elements = NumElements(dims);
-    static_data_.emplace_back(num_elements * sizeof(float));
-    float* data = reinterpret_cast<float*>(static_data_.back().data());
+                                            uint32_t flags = 0,
+                                            float* data = nullptr) {
+    if (data == nullptr) {
+      const size_t num_elements = NumElements(dims);
+      static_data_.emplace_back(num_elements * sizeof(float));
+      data = reinterpret_cast<float*>(static_data_.back().data());
 
-    if (tensor_type == TensorType::kDense) {
-      std::generate(data, data + num_elements, [&]() { return f32dist(rng_); });
-    } else {
-      // Create tensor with 90% sparsity in two steps:
-      // 1. Generate non-zero elements in the beginning of the vector
-      // 2. Randomize positions of non-zero elements
-      const size_t num_nonzero_elements = num_elements / 10;
-      std::generate(data, data + num_nonzero_elements, [&]() { return f32dist(rng_); });
-      std::shuffle(data, data + num_elements, rng_);
+      if (tensor_type == TensorType::kDense) {
+        std::generate(data, data + num_elements, [&]() { return f32dist(rng_); });
+      } else {
+        // Create tensor with 90% sparsity in two steps:
+        // 1. Generate non-zero elements in the beginning of the vector
+        // 2. Randomize positions of non-zero elements
+        const size_t num_nonzero_elements = num_elements / 10;
+        std::generate(data, data + num_nonzero_elements, [&]() { return f32dist(rng_); });
+        std::shuffle(data, data + num_elements, rng_);
+      }
     }
+
     uint32_t id_out;
     const xnn_status status =
         xnn_define_tensor_value(subgraph_.get(), xnn_datatype_fp32, dims.size(),
@@ -392,10 +396,8 @@ class SubgraphTester {
     return *this;
   }
 
-  inline SubgraphTester& RewriteForFp16() {
-    EXPECT_TRUE(xnn_subgraph_rewrite_for_fp16(subgraph_.get()));
-
-    return *this;
+  inline bool RewriteForFp16() {
+    return xnn_subgraph_rewrite_for_fp16(subgraph_.get());
   }
 
   inline xnn_layout_type GetLayout(uint32_t value_id) const {
@@ -404,6 +406,10 @@ class SubgraphTester {
 
   inline const xnn_value* const Value(uint32_t value_id) const {
     return &subgraph_->values[value_id];
+  }
+
+  inline size_t NumValues() const {
+    return subgraph_->num_values;
   }
 
   inline const xnn_node* const Node(uint32_t node_id) const {
